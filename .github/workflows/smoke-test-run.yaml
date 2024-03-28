@@ -1,0 +1,61 @@
+name: Run Playwright Tests
+
+on:
+  workflow_dispatch:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: '0 12 * * *' # Everyday 5 am PST
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '14'
+
+      - name: Install dependencies and Run Playwright tests
+        run: |
+         npm install
+         npx playwright install 
+         npm run smoke-test
+        env:
+         PAGE_URL: ${{ secrets.PAGE_URL}}
+         TEST_USERNAME: ${{secrets.TEST_USERNAME}}
+         TEST_PASSWORD: ${{secrets.TEST_PASSWORD}}
+         PLAYWRIGHT_JUNIT_OUTPUT_NAME: junit-report.xml
+      - name: "Set current date as env variable"
+        run: |
+          echo "builddate=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+        id: version  # this is used on variable path
+      - name: Python setup
+        if: always()
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.x'
+      - name: TestRail CLI upload results
+        if: always()
+        run: |
+          echo "NOW=$(date +'%Y-%m-%dT')" >> $GITHUB_ENV
+          pip install trcli
+          trcli -y \
+            -h ${{ secrets.TESTRAIL_URL}} \
+            --project "SSG" \
+            -u ${{ secrets.TESTRAIL_USERNAME}} \
+            -p ${{ secrets.TESTRAIL_PASSWORD}} \
+            parse_junit \
+            --title "Automated Tests #date ${{ steps.version.outputs.builddate }} #${{ github.run_id }}" \
+            --run-description ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} \
+            -f "junit-report.xml"
